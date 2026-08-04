@@ -12,6 +12,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _correoController = TextEditingController();
   final _passwordController = TextEditingController();
   String _mensaje = '';
+  String _rolSeleccionado = 'usuario';
 
   void _registrar() async {
     final correo = _correoController.text.trim();
@@ -23,7 +24,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     try {
-      await DBHelper.registrarUsuario(correo, password);
+      await DBHelper.registrarUsuario(correo, password, rol: _rolSeleccionado);
       if (mounted) {
         setState(() => _mensaje = 'Usuario registrado. Ya puedes iniciar sesión');
       }
@@ -49,6 +50,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
               controller: _passwordController,
               decoration: const InputDecoration(labelText: 'Contraseña'),
               obscureText: true,
+            ),
+            const SizedBox(height: 20),
+            DropdownButtonFormField<String>(
+              initialValue: _rolSeleccionado,
+              decoration: const InputDecoration(labelText: 'Rol'),
+              items: const [
+                DropdownMenuItem(value: 'usuario', child: Text('Usuario')),
+                DropdownMenuItem(value: 'admin', child: Text('Administrador')),
+              ],
+              onChanged: (valor) {
+                if (valor != null) {
+                  setState(() => _rolSeleccionado = valor);
+                }
+              },
             ),
             const SizedBox(height: 20),
             ElevatedButton(

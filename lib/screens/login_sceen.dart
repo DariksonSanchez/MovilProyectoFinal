@@ -27,9 +27,14 @@ class _LoginScreenState extends State<LoginScreen> {
     final usuario = await DBHelper.login(correo, password);
 
     if (usuario != null) {
+      final rol = usuario['rol'] as String? ?? 'usuario';
+      final idUsuario = usuario['id'] as int;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(
+          builder: (_) =>
+              HomeScreen(idUsuario: idUsuario, correo: correo, rol: rol),
+        ),
       );
     } else {
       setState(() => _mensaje = 'Correo o contraseña incorrectos');
