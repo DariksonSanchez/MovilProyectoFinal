@@ -22,6 +22,7 @@ class _MyLoansScreenState extends State<MyLoansScreen> {
 
   Future<void> _cargar() async {
     final prestamos = await DBHelper.obtenerPrestamosPorUsuario(widget.idUsuario);
+    if (!mounted) return;
     setState(() => _prestamos = prestamos);
   }
 

@@ -17,7 +17,6 @@ class CatalogScreen extends StatefulWidget {
 class _CatalogScreenState extends State<CatalogScreen> {
   List<Map<String, dynamic>> _libros = [];
   final _busquedaController = TextEditingController();
-  String _mensaje = '';
 
   @override
   void initState() {
@@ -27,27 +26,57 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   Future<void> _cargarLibros({String? busqueda}) async {
     final libros = await DBHelper.obtenerLibros(busqueda: busqueda);
+    if (!mounted) return;
     setState(() => _libros = libros);
   }
 
-  Future<void> _eliminarLibro(int id) async {
-    await DBHelper.eliminarLibro(id);
-    _cargarLibros(busqueda: _busquedaController.text);
+  void _avisar(String texto) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+  }
+
+  Future<void> _eliminarLibro(Map<String, dynamic> libro) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar libro'),
+        content: Text('¿Seguro que quieres eliminar "${libro['titulo']}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
+
+    final error = await DBHelper.eliminarLibro(libro['id'] as int);
+    if (!mounted) return;
+    _avisar(error ?? 'Libro eliminado');
+    await _cargarLibros(busqueda: _busquedaController.text);
   }
 
   Future<void> _prestarLibro(Map<String, dynamic> libro) async {
-    final exito = await DBHelper.crearPrestamo(widget.idUsuario, libro['id'] as int);
-    setState(() {
-      _mensaje = exito
-          ? 'Préstamo registrado: "${libro['titulo']}"'
-          : 'No hay copias disponibles';
-    });
-    _cargarLibros(busqueda: _busquedaController.text);
+    final error = await DBHelper.crearPrestamo(
+      widget.idUsuario,
+      libro['id'] as int,
+    );
+    if (!mounted) return;
+    _avisar(error ?? 'Préstamo registrado: "${libro['titulo']}"');
+    await _cargarLibros(busqueda: _busquedaController.text);
   }
 
   Future<void> _reservarLibro(Map<String, dynamic> libro) async {
-    await DBHelper.crearReserva(widget.idUsuario, libro['id'] as int);
-    setState(() => _mensaje = 'Reserva creada para "${libro['titulo']}"');
+    final error = await DBHelper.crearReserva(
+      widget.idUsuario,
+      libro['id'] as int,
+    );
+    if (!mounted) return;
+    _avisar(error ?? 'Reserva creada para "${libro['titulo']}"');
   }
 
   @override
@@ -78,11 +107,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               onChanged: (valor) => _cargarLibros(busqueda: valor),
             ),
-            if (_mensaje.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(_mensaje, style: const TextStyle(color: Colors.green)),
-              ),
             const SizedBox(height: 8),
             Expanded(
               child: _libros.isEmpty
@@ -119,7 +143,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                       ),
                                       IconButton(
                                         icon: const Icon(Icons.delete, color: Colors.red),
-                                        onPressed: () => _eliminarLibro(libro['id'] as int),
+                                        onPressed: () => _eliminarLibro(libro),
                                       ),
                                     ],
                                   )

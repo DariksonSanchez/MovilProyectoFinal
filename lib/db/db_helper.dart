@@ -8,6 +8,12 @@ class DBHelper {
   static const int diasPrestamo = 14;
   static const double multaPorDiaAtraso = 25.0; // RD$ por día de atraso
 
+  // Cuenta de administrador que se crea sola al inicializar la base de datos.
+  // Es la única forma de entrar como admin: el registro siempre crea usuarios
+  // normales, y desde "Gestionar usuarios" este admin puede promover a otros.
+  static const String adminCorreo = 'admin@biblioteca.com';
+  static const String adminPassword = 'admin123';
+
   static Future<Database> get database async {
     if (_db != null) return _db!;
     _db = await _initDB();
@@ -18,7 +24,7 @@ class DBHelper {
     String path = join(await getDatabasesPath(), 'usuarios.db');
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE usuarios(
@@ -29,6 +35,7 @@ class DBHelper {
           )
         ''');
         await _crearTablasLibreria(db);
+        await _sembrarAdmin(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -38,6 +45,9 @@ class DBHelper {
         }
         if (oldVersion < 3) {
           await _crearTablasLibreria(db);
+        }
+        if (oldVersion < 4) {
+          await _sembrarAdmin(db);
         }
       },
     );
@@ -83,6 +93,16 @@ class DBHelper {
     ''');
   }
 
+  /// Crea la cuenta de administrador por defecto. Se puede llamar las veces
+  /// que sea: el UNIQUE de `correo` más `ignore` hacen que no se duplique.
+  static Future<void> _sembrarAdmin(Database db) async {
+    await db.insert(
+      'usuarios',
+      {'correo': adminCorreo, 'password': adminPassword, 'rol': 'admin'},
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
   // ---------------- USUARIOS ----------------
 
   static Future<int> registrarUsuario(
@@ -110,6 +130,26 @@ class DBHelper {
     );
     if (result.isNotEmpty) return result.first;
     return null;
+  }
+
+  /// Lista de usuarios para el panel del admin. No devuelve la contraseña.
+  static Future<List<Map<String, dynamic>>> obtenerUsuarios() async {
+    final db = await database;
+    return await db.query(
+      'usuarios',
+      columns: ['id', 'correo', 'rol'],
+      orderBy: 'correo ASC',
+    );
+  }
+
+  static Future<int> actualizarRol(int idUsuario, String rol) async {
+    final db = await database;
+    return await db.update(
+      'usuarios',
+      {'rol': rol},
+      where: 'id = ?',
+      whereArgs: [idUsuario],
+    );
   }
 
   // ---------------- LIBROS (CATÁLOGO) ----------------
@@ -187,20 +227,60 @@ class DBHelper {
     );
   }
 
-  static Future<int> eliminarLibro(int id) async {
+  /// Elimina un libro. Devuelve `null` si se borró, o el motivo del rechazo.
+  ///
+  /// Un libro con historial no se elimina: los préstamos y las multas se
+  /// listan haciendo JOIN con `libros`, así que al borrarlo desaparecerían
+  /// de las pantallas del admin sin aviso, incluidos los préstamos sin
+  /// devolver y las multas sin cobrar.
+  static Future<String?> eliminarLibro(int id) async {
     final db = await database;
-    return await db.delete('libros', where: 'id = ?', whereArgs: [id]);
+
+    final prestamos = await db.query(
+      'prestamos',
+      where: 'id_libro = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (prestamos.isNotEmpty) {
+      return 'No se puede eliminar: el libro tiene préstamos registrados';
+    }
+
+    final reservas = await db.query(
+      'reservas',
+      where: 'id_libro = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (reservas.isNotEmpty) {
+      return 'No se puede eliminar: el libro tiene reservas registradas';
+    }
+
+    await db.delete('libros', where: 'id = ?', whereArgs: [id]);
+    return null;
   }
 
   // ---------------- PRÉSTAMOS ----------------
 
-  /// Crea un préstamo si hay copias disponibles. Devuelve true si tuvo éxito.
-  static Future<bool> crearPrestamo(int idUsuario, int idLibro) async {
+  /// Crea un préstamo. Devuelve `null` si se registró, o el motivo del
+  /// rechazo para mostrárselo al usuario.
+  static Future<String?> crearPrestamo(int idUsuario, int idLibro) async {
     final db = await database;
     final libro = await obtenerLibroPorId(idLibro);
-    if (libro == null || (libro['copias_disponibles'] as int) <= 0) {
-      return false;
+    if (libro == null) return 'El libro ya no existe';
+    if ((libro['copias_disponibles'] as int) <= 0) {
+      return 'No hay copias disponibles';
     }
+
+    // Un mismo usuario no puede tener dos préstamos activos del mismo libro
+    final yaPrestado = await db.query(
+      'prestamos',
+      where: 'id_usuario = ? AND id_libro = ? AND estado = ?',
+      whereArgs: [idUsuario, idLibro, 'activo'],
+      limit: 1,
+    );
+    if (yaPrestado.isNotEmpty) return 'Ya tienes este libro prestado';
+
     final ahora = DateTime.now();
     final fechaEsperada = ahora.add(const Duration(days: diasPrestamo));
 
@@ -220,7 +300,7 @@ class DBHelper {
       where: 'id = ?',
       whereArgs: [idLibro],
     );
-    return true;
+    return null;
   }
 
   /// Marca un préstamo como devuelto, calcula la multa si aplica y
@@ -334,14 +414,29 @@ class DBHelper {
   // ---------------- RESERVAS ----------------
 
   /// Crea una reserva. Pensada para cuando no hay copias disponibles.
-  static Future<int> crearReserva(int idUsuario, int idLibro) async {
+  /// Devuelve `null` si se registró, o el motivo del rechazo.
+  static Future<String?> crearReserva(int idUsuario, int idLibro) async {
     final db = await database;
-    return await db.insert('reservas', {
+
+    // Sin esto, pulsar "Reservar" varias veces llena la cola del admin
+    // con reservas repetidas del mismo usuario y el mismo libro
+    final yaReservado = await db.query(
+      'reservas',
+      where: 'id_usuario = ? AND id_libro = ? AND estado = ?',
+      whereArgs: [idUsuario, idLibro, 'pendiente'],
+      limit: 1,
+    );
+    if (yaReservado.isNotEmpty) {
+      return 'Ya tienes una reserva pendiente de este libro';
+    }
+
+    await db.insert('reservas', {
       'id_usuario': idUsuario,
       'id_libro': idLibro,
       'fecha_reserva': DateTime.now().toIso8601String(),
       'estado': 'pendiente',
     });
+    return null;
   }
 
   static Future<List<Map<String, dynamic>>> obtenerReservasPendientes() async {
@@ -374,9 +469,14 @@ class DBHelper {
   }
 
   /// Convierte una reserva pendiente en préstamo, si hay copia disponible.
-  static Future<bool> completarReserva(int idReserva, int idLibro, int idUsuario) async {
-    final exito = await crearPrestamo(idUsuario, idLibro);
-    if (!exito) return false;
+  /// Devuelve `null` si se completó, o el motivo del rechazo.
+  static Future<String?> completarReserva(
+    int idReserva,
+    int idLibro,
+    int idUsuario,
+  ) async {
+    final error = await crearPrestamo(idUsuario, idLibro);
+    if (error != null) return error;
     final db = await database;
     await db.update(
       'reservas',
@@ -384,7 +484,7 @@ class DBHelper {
       where: 'id = ?',
       whereArgs: [idReserva],
     );
-    return true;
+    return null;
   }
 
   static Future<int> cancelarReserva(int idReserva) async {

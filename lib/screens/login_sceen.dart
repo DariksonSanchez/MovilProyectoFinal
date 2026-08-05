@@ -25,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     final usuario = await DBHelper.login(correo, password);
+    if (!mounted) return;
 
     if (usuario != null) {
       final rol = usuario['rol'] as String? ?? 'usuario';

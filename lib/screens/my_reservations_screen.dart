@@ -22,12 +22,13 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
 
   Future<void> _cargar() async {
     final reservas = await DBHelper.obtenerReservasPorUsuario(widget.idUsuario);
+    if (!mounted) return;
     setState(() => _reservas = reservas);
   }
 
   Future<void> _cancelar(int idReserva) async {
     await DBHelper.cancelarReserva(idReserva);
-    _cargar();
+    await _cargar();
   }
 
   @override

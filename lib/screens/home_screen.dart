@@ -5,6 +5,8 @@ import 'my_loans_screen.dart';
 import 'fines_screen.dart';
 import 'reservations_screen.dart';
 import 'my_reservations_screen.dart';
+import 'users_screen.dart';
+import 'login_sceen.dart';
 
 class HomeScreen extends StatelessWidget {
   final int idUsuario;
@@ -23,7 +25,21 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Biblioteca')),
+      appBar: AppBar(
+        title: const Text('Biblioteca'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Cerrar sesión',
+            // Limpiamos el stack para que el botón atrás no regrese a la sesión
+            onPressed: () => Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              (route) => false,
+            ),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -84,6 +100,17 @@ class HomeScreen extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const FinesScreen()),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _BotonMenu(
+                icono: Icons.people,
+                texto: 'Gestionar usuarios',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => UsersScreen(idUsuario: idUsuario),
+                  ),
                 ),
               ),
             ] else ...[

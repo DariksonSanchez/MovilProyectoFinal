@@ -12,7 +12,6 @@ class ReservationsScreen extends StatefulWidget {
 
 class _ReservationsScreenState extends State<ReservationsScreen> {
   List<Map<String, dynamic>> _reservas = [];
-  String _mensaje = '';
 
   @override
   void initState() {
@@ -22,26 +21,26 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
 
   Future<void> _cargar() async {
     final reservas = await DBHelper.obtenerReservasPendientes();
+    if (!mounted) return;
     setState(() => _reservas = reservas);
   }
 
   Future<void> _completar(Map<String, dynamic> reserva) async {
-    final exito = await DBHelper.completarReserva(
+    final error = await DBHelper.completarReserva(
       reserva['id'] as int,
       reserva['id_libro'] as int,
       reserva['id_usuario'] as int,
     );
-    setState(() {
-      _mensaje = exito
-          ? 'Reserva completada: préstamo creado'
-          : 'Aún no hay copias disponibles para este libro';
-    });
-    _cargar();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error ?? 'Reserva completada: préstamo creado')),
+    );
+    await _cargar();
   }
 
   Future<void> _cancelar(int idReserva) async {
     await DBHelper.cancelarReserva(idReserva);
-    _cargar();
+    await _cargar();
   }
 
   @override
@@ -52,11 +51,6 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            if (_mensaje.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_mensaje, style: const TextStyle(color: Colors.green)),
-              ),
             Expanded(
               child: _reservas.isEmpty
                   ? const Center(child: Text('No hay reservas pendientes'))

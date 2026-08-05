@@ -20,12 +20,13 @@ class _FinesScreenState extends State<FinesScreen> {
 
   Future<void> _cargar() async {
     final multas = await DBHelper.obtenerMultasPendientes();
+    if (!mounted) return;
     setState(() => _multas = multas);
   }
 
   Future<void> _pagar(int idPrestamo) async {
     await DBHelper.pagarMulta(idPrestamo);
-    _cargar();
+    await _cargar();
   }
 
   @override

@@ -11,7 +11,6 @@ class LoansScreen extends StatefulWidget {
 
 class _LoansScreenState extends State<LoansScreen> {
   List<Map<String, dynamic>> _prestamos = [];
-  String _mensaje = '';
 
   @override
   void initState() {
@@ -21,17 +20,23 @@ class _LoansScreenState extends State<LoansScreen> {
 
   Future<void> _cargar() async {
     final prestamos = await DBHelper.obtenerPrestamos();
+    if (!mounted) return;
     setState(() => _prestamos = prestamos);
   }
 
   Future<void> _marcarDevuelto(Map<String, dynamic> prestamo) async {
     final multa = await DBHelper.devolverPrestamo(prestamo['id'] as int);
-    setState(() {
-      _mensaje = multa > 0
-          ? 'Devuelto con multa de RD\$${multa.toStringAsFixed(0)} por atraso'
-          : 'Devuelto sin multa';
-    });
-    _cargar();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          multa > 0
+              ? 'Devuelto con multa de RD\$${multa.toStringAsFixed(0)} por atraso'
+              : 'Devuelto sin multa',
+        ),
+      ),
+    );
+    await _cargar();
   }
 
   String _formatearFecha(String iso) {
@@ -48,11 +53,6 @@ class _LoansScreenState extends State<LoansScreen> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            if (_mensaje.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_mensaje, style: const TextStyle(color: Colors.green)),
-              ),
             Expanded(
               child: _prestamos.isEmpty
                   ? const Center(child: Text('No hay préstamos registrados'))
