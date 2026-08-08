@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
+import '../db/prestamos_dao.dart';
 
 /// Pantalla de administrador: ver todos los préstamos y marcar devoluciones.
 class LoansScreen extends StatefulWidget {
@@ -19,13 +19,13 @@ class _LoansScreenState extends State<LoansScreen> {
   }
 
   Future<void> _cargar() async {
-    final prestamos = await DBHelper.obtenerPrestamos();
+    final prestamos = await PrestamosDao.obtenerPrestamos();
     if (!mounted) return;
     setState(() => _prestamos = prestamos);
   }
 
   Future<void> _marcarDevuelto(Map<String, dynamic> prestamo) async {
-    final multa = await DBHelper.devolverPrestamo(prestamo['id'] as int);
+    final multa = await PrestamosDao.devolverPrestamo(prestamo['id'] as int);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

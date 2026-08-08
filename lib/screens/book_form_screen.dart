@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
+import '../db/libros_dao.dart';
 
 class BookFormScreen extends StatefulWidget {
   final Map<String, dynamic>? libro; // null = crear nuevo, no null = editar
@@ -46,7 +46,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
     }
 
     if (widget.esEdicion) {
-      await DBHelper.actualizarLibro(
+      await LibrosDao.actualizarLibro(
         id: widget.libro!['id'] as int,
         titulo: titulo,
         autor: autor,
@@ -55,7 +55,7 @@ class _BookFormScreenState extends State<BookFormScreen> {
         copiasTotales: copias,
       );
     } else {
-      await DBHelper.insertarLibro(
+      await LibrosDao.insertarLibro(
         titulo: titulo,
         autor: autor,
         genero: genero.isEmpty ? null : genero,

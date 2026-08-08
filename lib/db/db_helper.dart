@@ -1,19 +1,16 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
+/// Abre y mantiene la conexión con SQLite y define el esquema.
+///
+/// Las consultas no viven aquí: cada tabla tiene su propio DAO
+/// (`UsuariosDao`, `LibrosDao`, `PrestamosDao`, `ReservasDao`), y todos
+/// arrancan pidiendo `DBHelper.database`.
 class DBHelper {
   static Database? _db;
 
-  // Reglas simples del sistema de préstamos
-  static const int diasPrestamo = 14;
-  static const double multaPorDiaAtraso = 25.0; // RD$ por día de atraso
-
-  // Cuenta de administrador que se crea sola al inicializar la base de datos.
-  // Es la única forma de entrar como admin: el registro siempre crea usuarios
-  // normales, y desde "Gestionar usuarios" este admin puede promover a otros.
-  static const String adminCorreo = 'admin@biblioteca.com';
-  static const String adminPassword = 'admin123';
-
+  /// Conexión única para toda la app. Se abre la primera vez que alguien
+  /// la pide y a partir de ahí se reutiliza.
   static Future<Database> get database async {
     if (_db != null) return _db!;
     _db = await _initDB();
@@ -24,7 +21,7 @@ class DBHelper {
     String path = join(await getDatabasesPath(), 'usuarios.db');
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE usuarios(
@@ -35,8 +32,11 @@ class DBHelper {
           )
         ''');
         await _crearTablasLibreria(db);
-        await _sembrarAdmin(db);
+        await _sembrarLibros(db);
       },
+      // Los `if` van encadenados y sin `else` a propósito: una base que viene
+      // de la versión 1 ejecuta todos los bloques en orden y termina igual
+      // que una instalación nueva.
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(
@@ -46,8 +46,11 @@ class DBHelper {
         if (oldVersion < 3) {
           await _crearTablasLibreria(db);
         }
-        if (oldVersion < 4) {
-          await _sembrarAdmin(db);
+        // La versión 4 sembraba una cuenta de administrador con la contraseña
+        // escrita en el código. Se eliminó: ahora el primer usuario que se
+        // registra es el que queda como admin (ver UsuariosDao).
+        if (oldVersion < 5) {
+          await _sembrarLibros(db);
         }
       },
     );
@@ -93,407 +96,118 @@ class DBHelper {
     ''');
   }
 
-  /// Crea la cuenta de administrador por defecto. Se puede llamar las veces
-  /// que sea: el UNIQUE de `correo` más `ignore` hacen que no se duplique.
-  static Future<void> _sembrarAdmin(Database db) async {
-    await db.insert(
-      'usuarios',
-      {'correo': adminCorreo, 'password': adminPassword, 'rol': 'admin'},
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    );
-  }
-
-  // ---------------- USUARIOS ----------------
-
-  static Future<int> registrarUsuario(
-    String correo,
-    String password, {
-    String rol = 'usuario',
-  }) async {
-    final db = await database;
-    return await db.insert('usuarios', {
-      'correo': correo,
-      'password': password,
-      'rol': rol,
-    });
-  }
-
-  static Future<Map<String, dynamic>?> login(
-    String correo,
-    String password,
-  ) async {
-    final db = await database;
-    final result = await db.query(
-      'usuarios',
-      where: 'correo = ? AND password = ?',
-      whereArgs: [correo, password],
-    );
-    if (result.isNotEmpty) return result.first;
-    return null;
-  }
-
-  /// Lista de usuarios para el panel del admin. No devuelve la contraseña.
-  static Future<List<Map<String, dynamic>>> obtenerUsuarios() async {
-    final db = await database;
-    return await db.query(
-      'usuarios',
-      columns: ['id', 'correo', 'rol'],
-      orderBy: 'correo ASC',
-    );
-  }
-
-  static Future<int> actualizarRol(int idUsuario, String rol) async {
-    final db = await database;
-    return await db.update(
-      'usuarios',
-      {'rol': rol},
-      where: 'id = ?',
-      whereArgs: [idUsuario],
-    );
-  }
-
-  // ---------------- LIBROS (CATÁLOGO) ----------------
-
-  static Future<int> insertarLibro({
-    required String titulo,
-    required String autor,
-    String? genero,
-    String? isbn,
-    required int copias,
-  }) async {
-    final db = await database;
-    return await db.insert('libros', {
-      'titulo': titulo,
-      'autor': autor,
-      'genero': genero,
-      'isbn': isbn,
-      'copias_totales': copias,
-      'copias_disponibles': copias,
-    });
-  }
-
-  static Future<List<Map<String, dynamic>>> obtenerLibros({
-    String? busqueda,
-  }) async {
-    final db = await database;
-    if (busqueda == null || busqueda.trim().isEmpty) {
-      return await db.query('libros', orderBy: 'titulo ASC');
-    }
-    final q = '%${busqueda.trim()}%';
-    return await db.query(
-      'libros',
-      where: 'titulo LIKE ? OR autor LIKE ? OR genero LIKE ?',
-      whereArgs: [q, q, q],
-      orderBy: 'titulo ASC',
-    );
-  }
-
-  static Future<Map<String, dynamic>?> obtenerLibroPorId(int id) async {
-    final db = await database;
-    final result = await db.query('libros', where: 'id = ?', whereArgs: [id]);
-    if (result.isNotEmpty) return result.first;
-    return null;
-  }
-
-  static Future<int> actualizarLibro({
-    required int id,
-    required String titulo,
-    required String autor,
-    String? genero,
-    String? isbn,
-    required int copiasTotales,
-  }) async {
-    final db = await database;
-    // Ajustamos las copias disponibles proporcionalmente al cambio de copias totales
-    final libro = await obtenerLibroPorId(id);
-    int copiasDisponibles = copiasTotales;
-    if (libro != null) {
-      final prestadas =
-          (libro['copias_totales'] as int) - (libro['copias_disponibles'] as int);
-      copiasDisponibles = (copiasTotales - prestadas).clamp(0, copiasTotales);
-    }
-    return await db.update(
-      'libros',
-      {
-        'titulo': titulo,
-        'autor': autor,
-        'genero': genero,
-        'isbn': isbn,
-        'copias_totales': copiasTotales,
-        'copias_disponibles': copiasDisponibles,
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  /// Elimina un libro. Devuelve `null` si se borró, o el motivo del rechazo.
+  /// Catálogo de ejemplo, para que la app no arranque vacía.
   ///
-  /// Un libro con historial no se elimina: los préstamos y las multas se
-  /// listan haciendo JOIN con `libros`, así que al borrarlo desaparecerían
-  /// de las pantallas del admin sin aviso, incluidos los préstamos sin
-  /// devolver y las multas sin cobrar.
-  static Future<String?> eliminarLibro(int id) async {
-    final db = await database;
+  /// Solo siembra si la tabla está vacía, así una base que viene de una
+  /// versión anterior conserva los libros que se capturaron a mano.
+  static Future<void> _sembrarLibros(Database db) async {
+    final cuantos =
+        Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM libros')) ??
+            0;
+    if (cuantos > 0) return;
 
-    final prestamos = await db.query(
-      'prestamos',
-      where: 'id_libro = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (prestamos.isNotEmpty) {
-      return 'No se puede eliminar: el libro tiene préstamos registrados';
-    }
-
-    final reservas = await db.query(
-      'reservas',
-      where: 'id_libro = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (reservas.isNotEmpty) {
-      return 'No se puede eliminar: el libro tiene reservas registradas';
-    }
-
-    await db.delete('libros', where: 'id = ?', whereArgs: [id]);
-    return null;
-  }
-
-  // ---------------- PRÉSTAMOS ----------------
-
-  /// Crea un préstamo. Devuelve `null` si se registró, o el motivo del
-  /// rechazo para mostrárselo al usuario.
-  static Future<String?> crearPrestamo(int idUsuario, int idLibro) async {
-    final db = await database;
-    final libro = await obtenerLibroPorId(idLibro);
-    if (libro == null) return 'El libro ya no existe';
-    if ((libro['copias_disponibles'] as int) <= 0) {
-      return 'No hay copias disponibles';
-    }
-
-    // Un mismo usuario no puede tener dos préstamos activos del mismo libro
-    final yaPrestado = await db.query(
-      'prestamos',
-      where: 'id_usuario = ? AND id_libro = ? AND estado = ?',
-      whereArgs: [idUsuario, idLibro, 'activo'],
-      limit: 1,
-    );
-    if (yaPrestado.isNotEmpty) return 'Ya tienes este libro prestado';
-
-    final ahora = DateTime.now();
-    final fechaEsperada = ahora.add(const Duration(days: diasPrestamo));
-
-    await db.insert('prestamos', {
-      'id_usuario': idUsuario,
-      'id_libro': idLibro,
-      'fecha_prestamo': ahora.toIso8601String(),
-      'fecha_devolucion_esperada': fechaEsperada.toIso8601String(),
-      'estado': 'activo',
-      'multa': 0,
-      'multa_pagada': 0,
-    });
-
-    await db.update(
-      'libros',
-      {'copias_disponibles': (libro['copias_disponibles'] as int) - 1},
-      where: 'id = ?',
-      whereArgs: [idLibro],
-    );
-    return null;
-  }
-
-  /// Marca un préstamo como devuelto, calcula la multa si aplica y
-  /// libera una copia del libro.
-  static Future<double> devolverPrestamo(int idPrestamo) async {
-    final db = await database;
-    final result = await db.query(
-      'prestamos',
-      where: 'id = ?',
-      whereArgs: [idPrestamo],
-    );
-    if (result.isEmpty) return 0;
-    final prestamo = result.first;
-
-    final ahora = DateTime.now();
-    final fechaEsperada = DateTime.parse(
-      prestamo['fecha_devolucion_esperada'] as String,
-    );
-
-    double multa = 0;
-    if (ahora.isAfter(fechaEsperada)) {
-      final diasAtraso = ahora.difference(fechaEsperada).inDays;
-      multa = diasAtraso * multaPorDiaAtraso;
-    }
-
-    await db.update(
-      'prestamos',
+    const catalogo = <Map<String, Object>>[
       {
-        'fecha_devolucion_real': ahora.toIso8601String(),
-        'estado': 'devuelto',
-        'multa': multa,
+        'titulo': 'Cien años de soledad',
+        'autor': 'Gabriel García Márquez',
+        'genero': 'Realismo mágico',
+        'isbn': '9780307474728',
+        'copias': 3,
       },
-      where: 'id = ?',
-      whereArgs: [idPrestamo],
-    );
+      {
+        'titulo': 'El amor en los tiempos del cólera',
+        'autor': 'Gabriel García Márquez',
+        'genero': 'Novela',
+        'isbn': '9780307389732',
+        'copias': 2,
+      },
+      {
+        'titulo': 'Crónica de una muerte anunciada',
+        'autor': 'Gabriel García Márquez',
+        'genero': 'Novela',
+        'isbn': '9781400034956',
+        'copias': 1,
+      },
+      {
+        'titulo': 'Don Quijote de la Mancha',
+        'autor': 'Miguel de Cervantes',
+        'genero': 'Clásico',
+        'isbn': '9788420412146',
+        'copias': 4,
+      },
+      {
+        'titulo': 'La casa de los espíritus',
+        'autor': 'Isabel Allende',
+        'genero': 'Realismo mágico',
+        'isbn': '9788401337208',
+        'copias': 2,
+      },
+      // Los dos títulos con 'disponibles': 0 arrancan agotados, para que el
+      // botón "Reservar" del catálogo se vea desde la primera ejecución
+      {
+        'titulo': 'Rayuela',
+        'autor': 'Julio Cortázar',
+        'genero': 'Novela',
+        'isbn': '9788437604572',
+        'copias': 2,
+        'disponibles': 0,
+      },
+      {
+        'titulo': 'Pedro Páramo',
+        'autor': 'Juan Rulfo',
+        'genero': 'Novela',
+        'isbn': '9788437604183',
+        'copias': 2,
+      },
+      {
+        'titulo': 'Ficciones',
+        'autor': 'Jorge Luis Borges',
+        'genero': 'Cuento',
+        'isbn': '9788420633121',
+        'copias': 2,
+      },
+      {
+        'titulo': 'La ciudad y los perros',
+        'autor': 'Mario Vargas Llosa',
+        'genero': 'Novela',
+        'isbn': '9788420471839',
+        'copias': 1,
+        'disponibles': 0,
+      },
+      {
+        'titulo': 'La sombra del viento',
+        'autor': 'Carlos Ruiz Zafón',
+        'genero': 'Misterio',
+        'isbn': '9788408163381',
+        'copias': 3,
+      },
+      {
+        'titulo': '1984',
+        'autor': 'George Orwell',
+        'genero': 'Distopía',
+        'isbn': '9788499890944',
+        'copias': 3,
+      },
+      {
+        'titulo': 'El principito',
+        'autor': 'Antoine de Saint-Exupéry',
+        'genero': 'Fábula',
+        'isbn': '9788498381498',
+        'copias': 4,
+      },
+    ];
 
-    final libro = await obtenerLibroPorId(prestamo['id_libro'] as int);
-    if (libro != null) {
-      final nuevasDisponibles =
-          ((libro['copias_disponibles'] as int) + 1)
-              .clamp(0, libro['copias_totales'] as int);
-      await db.update(
-        'libros',
-        {'copias_disponibles': nuevasDisponibles},
-        where: 'id = ?',
-        whereArgs: [libro['id']],
-      );
+    for (final libro in catalogo) {
+      final copias = libro['copias'] as int;
+      await db.insert('libros', {
+        'titulo': libro['titulo'],
+        'autor': libro['autor'],
+        'genero': libro['genero'],
+        'isbn': libro['isbn'],
+        'copias_totales': copias,
+        // Si no se indica otra cosa, todas las copias arrancan disponibles
+        'copias_disponibles': (libro['disponibles'] as int?) ?? copias,
+      });
     }
-
-    return multa;
-  }
-
-  /// Todos los préstamos con datos del libro y usuario (para el admin).
-  static Future<List<Map<String, dynamic>>> obtenerPrestamos({
-    String? estado,
-  }) async {
-    final db = await database;
-    final where = estado != null ? 'p.estado = ?' : null;
-    final whereArgs = estado != null ? [estado] : null;
-    return await db.rawQuery('''
-      SELECT p.*, l.titulo AS libro_titulo, u.correo AS usuario_correo
-      FROM prestamos p
-      JOIN libros l ON p.id_libro = l.id
-      JOIN usuarios u ON p.id_usuario = u.id
-      ${where != null ? 'WHERE $where' : ''}
-      ORDER BY p.fecha_prestamo DESC
-    ''', whereArgs);
-  }
-
-  /// Préstamos de un usuario específico (para "Mis préstamos").
-  static Future<List<Map<String, dynamic>>> obtenerPrestamosPorUsuario(
-    int idUsuario,
-  ) async {
-    final db = await database;
-    return await db.rawQuery(
-      '''
-      SELECT p.*, l.titulo AS libro_titulo, l.autor AS libro_autor
-      FROM prestamos p
-      JOIN libros l ON p.id_libro = l.id
-      WHERE p.id_usuario = ?
-      ORDER BY p.fecha_prestamo DESC
-      ''',
-      [idUsuario],
-    );
-  }
-
-  // ---------------- MULTAS ----------------
-
-  static Future<List<Map<String, dynamic>>> obtenerMultasPendientes() async {
-    final db = await database;
-    return await db.rawQuery('''
-      SELECT p.*, l.titulo AS libro_titulo, u.correo AS usuario_correo
-      FROM prestamos p
-      JOIN libros l ON p.id_libro = l.id
-      JOIN usuarios u ON p.id_usuario = u.id
-      WHERE p.multa > 0 AND p.multa_pagada = 0
-      ORDER BY p.fecha_devolucion_real DESC
-    ''');
-  }
-
-  static Future<int> pagarMulta(int idPrestamo) async {
-    final db = await database;
-    return await db.update(
-      'prestamos',
-      {'multa_pagada': 1},
-      where: 'id = ?',
-      whereArgs: [idPrestamo],
-    );
-  }
-
-  // ---------------- RESERVAS ----------------
-
-  /// Crea una reserva. Pensada para cuando no hay copias disponibles.
-  /// Devuelve `null` si se registró, o el motivo del rechazo.
-  static Future<String?> crearReserva(int idUsuario, int idLibro) async {
-    final db = await database;
-
-    // Sin esto, pulsar "Reservar" varias veces llena la cola del admin
-    // con reservas repetidas del mismo usuario y el mismo libro
-    final yaReservado = await db.query(
-      'reservas',
-      where: 'id_usuario = ? AND id_libro = ? AND estado = ?',
-      whereArgs: [idUsuario, idLibro, 'pendiente'],
-      limit: 1,
-    );
-    if (yaReservado.isNotEmpty) {
-      return 'Ya tienes una reserva pendiente de este libro';
-    }
-
-    await db.insert('reservas', {
-      'id_usuario': idUsuario,
-      'id_libro': idLibro,
-      'fecha_reserva': DateTime.now().toIso8601String(),
-      'estado': 'pendiente',
-    });
-    return null;
-  }
-
-  static Future<List<Map<String, dynamic>>> obtenerReservasPendientes() async {
-    final db = await database;
-    return await db.rawQuery('''
-      SELECT r.*, l.titulo AS libro_titulo, l.copias_disponibles AS libro_disponibles,
-             u.correo AS usuario_correo
-      FROM reservas r
-      JOIN libros l ON r.id_libro = l.id
-      JOIN usuarios u ON r.id_usuario = u.id
-      WHERE r.estado = 'pendiente'
-      ORDER BY r.fecha_reserva ASC
-    ''');
-  }
-
-  static Future<List<Map<String, dynamic>>> obtenerReservasPorUsuario(
-    int idUsuario,
-  ) async {
-    final db = await database;
-    return await db.rawQuery(
-      '''
-      SELECT r.*, l.titulo AS libro_titulo, l.autor AS libro_autor
-      FROM reservas r
-      JOIN libros l ON r.id_libro = l.id
-      WHERE r.id_usuario = ?
-      ORDER BY r.fecha_reserva DESC
-      ''',
-      [idUsuario],
-    );
-  }
-
-  /// Convierte una reserva pendiente en préstamo, si hay copia disponible.
-  /// Devuelve `null` si se completó, o el motivo del rechazo.
-  static Future<String?> completarReserva(
-    int idReserva,
-    int idLibro,
-    int idUsuario,
-  ) async {
-    final error = await crearPrestamo(idUsuario, idLibro);
-    if (error != null) return error;
-    final db = await database;
-    await db.update(
-      'reservas',
-      {'estado': 'completada'},
-      where: 'id = ?',
-      whereArgs: [idReserva],
-    );
-    return null;
-  }
-
-  static Future<int> cancelarReserva(int idReserva) async {
-    final db = await database;
-    return await db.update(
-      'reservas',
-      {'estado': 'cancelada'},
-      where: 'id = ?',
-      whereArgs: [idReserva],
-    );
   }
 }

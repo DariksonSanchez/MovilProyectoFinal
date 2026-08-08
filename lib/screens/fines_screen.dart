@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
+import '../db/prestamos_dao.dart';
 
 /// Pantalla de administrador: ver y marcar como pagadas las multas pendientes.
 class FinesScreen extends StatefulWidget {
@@ -19,13 +19,13 @@ class _FinesScreenState extends State<FinesScreen> {
   }
 
   Future<void> _cargar() async {
-    final multas = await DBHelper.obtenerMultasPendientes();
+    final multas = await PrestamosDao.obtenerMultasPendientes();
     if (!mounted) return;
     setState(() => _multas = multas);
   }
 
   Future<void> _pagar(int idPrestamo) async {
-    await DBHelper.pagarMulta(idPrestamo);
+    await PrestamosDao.pagarMulta(idPrestamo);
     await _cargar();
   }
 

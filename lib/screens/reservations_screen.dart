@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
+import '../db/reservas_dao.dart';
 
 /// Pantalla de administrador: ver reservas pendientes y completarlas
 /// cuando haya copias disponibles, o cancelarlas.
@@ -20,13 +20,13 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
   }
 
   Future<void> _cargar() async {
-    final reservas = await DBHelper.obtenerReservasPendientes();
+    final reservas = await ReservasDao.obtenerReservasPendientes();
     if (!mounted) return;
     setState(() => _reservas = reservas);
   }
 
   Future<void> _completar(Map<String, dynamic> reserva) async {
-    final error = await DBHelper.completarReserva(
+    final error = await ReservasDao.completarReserva(
       reserva['id'] as int,
       reserva['id_libro'] as int,
       reserva['id_usuario'] as int,
@@ -39,7 +39,7 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
   }
 
   Future<void> _cancelar(int idReserva) async {
-    await DBHelper.cancelarReserva(idReserva);
+    await ReservasDao.cancelarReserva(idReserva);
     await _cargar();
   }
 

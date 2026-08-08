@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
+import '../db/usuarios_dao.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -23,10 +23,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     try {
-      // Siempre rol 'usuario': el admin sale de la semilla de la base de datos
-      await DBHelper.registrarUsuario(correo, password);
+      // El primer registro de una base vacía queda como administrador
+      final rol = await UsuariosDao.registrarUsuario(correo, password);
       if (mounted) {
-        setState(() => _mensaje = 'Usuario registrado. Ya puedes iniciar sesión');
+        setState(() => _mensaje = rol == 'admin'
+            ? 'Cuenta de administrador creada. Ya puedes iniciar sesión'
+            : 'Usuario registrado. Ya puedes iniciar sesión');
       }
     } catch (e) {
       setState(() => _mensaje = 'Ese correo ya está registrado');

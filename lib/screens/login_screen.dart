@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
+import '../db/usuarios_dao.dart';
 import 'register_screen.dart';
 import 'home_screen.dart';
 
@@ -24,7 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final usuario = await DBHelper.login(correo, password);
+    final usuario = await UsuariosDao.login(correo, password);
     if (!mounted) return;
 
     if (usuario != null) {

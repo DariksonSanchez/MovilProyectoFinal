@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
+import '../db/usuarios_dao.dart';
 
 /// Pantalla de administrador: ver los usuarios registrados y promoverlos
 /// a admin o bajarlos a usuario normal.
@@ -23,13 +23,13 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Future<void> _cargar() async {
-    final usuarios = await DBHelper.obtenerUsuarios();
+    final usuarios = await UsuariosDao.obtenerUsuarios();
     if (!mounted) return;
     setState(() => _usuarios = usuarios);
   }
 
   Future<void> _cambiarRol(int id, bool esAdmin) async {
-    await DBHelper.actualizarRol(id, esAdmin ? 'admin' : 'usuario');
+    await UsuariosDao.actualizarRol(id, esAdmin ? 'admin' : 'usuario');
     await _cargar();
   }
 

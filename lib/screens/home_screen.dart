@@ -6,7 +6,8 @@ import 'fines_screen.dart';
 import 'reservations_screen.dart';
 import 'my_reservations_screen.dart';
 import 'users_screen.dart';
-import 'login_sceen.dart';
+import 'login_screen.dart';
+import 'profile_tab.dart';
 
 class HomeScreen extends StatelessWidget {
   final int idUsuario;
@@ -20,126 +21,132 @@ class HomeScreen extends StatelessWidget {
     required this.rol,
   });
 
+  @override
+  Widget build(BuildContext context) {
+    // Dos pestañas: se cambia deslizando o tocando el título
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Biblioteca'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'Cerrar sesión',
+              // Limpiamos el stack para que el botón atrás no regrese a la sesión
+              onPressed: () => Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              ),
+            ),
+          ],
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.home), text: 'Inicio'),
+              Tab(icon: Icon(Icons.account_circle), text: 'Mi perfil'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _MenuTab(idUsuario: idUsuario, rol: rol),
+            ProfileTab(idUsuario: idUsuario, correo: correo, rol: rol),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Primera pestaña: el menú de opciones, distinto según el rol.
+class _MenuTab extends StatelessWidget {
+  final int idUsuario;
+  final String rol;
+
+  const _MenuTab({required this.idUsuario, required this.rol});
+
   bool get esAdmin => rol == 'admin';
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Biblioteca'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Cerrar sesión',
-            // Limpiamos el stack para que el botón atrás no regrese a la sesión
-            onPressed: () => Navigator.pushAndRemoveUntil(
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        _BotonMenu(
+          icono: Icons.menu_book,
+          texto: 'Catálogo de libros',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CatalogScreen(idUsuario: idUsuario, rol: rol),
+            ),
+          ),
+        ),
+        if (esAdmin) ...[
+          const SizedBox(height: 12),
+          _BotonMenu(
+            icono: Icons.assignment,
+            texto: 'Gestionar préstamos',
+            onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
-              (route) => false,
+              MaterialPageRoute(builder: (_) => const LoansScreen()),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _BotonMenu(
+            icono: Icons.bookmark,
+            texto: 'Reservas pendientes',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ReservationsScreen()),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _BotonMenu(
+            icono: Icons.attach_money,
+            texto: 'Multas pendientes',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const FinesScreen()),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _BotonMenu(
+            icono: Icons.people,
+            texto: 'Gestionar usuarios',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => UsersScreen(idUsuario: idUsuario),
+              ),
+            ),
+          ),
+        ] else ...[
+          const SizedBox(height: 12),
+          _BotonMenu(
+            icono: Icons.assignment,
+            texto: 'Mis préstamos',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MyLoansScreen(idUsuario: idUsuario),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _BotonMenu(
+            icono: Icons.bookmark,
+            texto: 'Mis reservas',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MyReservationsScreen(idUsuario: idUsuario),
+              ),
             ),
           ),
         ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              correo,
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Chip(
-                label: Text(esAdmin ? 'Administrador' : 'Usuario'),
-                backgroundColor:
-                    esAdmin ? Colors.orange.shade100 : Colors.blue.shade100,
-                avatar: Icon(
-                  esAdmin ? Icons.admin_panel_settings : Icons.person,
-                  size: 18,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            _BotonMenu(
-              icono: Icons.menu_book,
-              texto: 'Catálogo de libros',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      CatalogScreen(idUsuario: idUsuario, rol: rol),
-                ),
-              ),
-            ),
-            if (esAdmin) ...[
-              const SizedBox(height: 12),
-              _BotonMenu(
-                icono: Icons.assignment,
-                texto: 'Gestionar préstamos',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoansScreen()),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _BotonMenu(
-                icono: Icons.bookmark,
-                texto: 'Reservas pendientes',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ReservationsScreen()),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _BotonMenu(
-                icono: Icons.attach_money,
-                texto: 'Multas pendientes',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const FinesScreen()),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _BotonMenu(
-                icono: Icons.people,
-                texto: 'Gestionar usuarios',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => UsersScreen(idUsuario: idUsuario),
-                  ),
-                ),
-              ),
-            ] else ...[
-              const SizedBox(height: 12),
-              _BotonMenu(
-                icono: Icons.assignment,
-                texto: 'Mis préstamos',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MyLoansScreen(idUsuario: idUsuario),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _BotonMenu(
-                icono: Icons.bookmark,
-                texto: 'Mis reservas',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MyReservationsScreen(idUsuario: idUsuario),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+      ],
     );
   }
 }

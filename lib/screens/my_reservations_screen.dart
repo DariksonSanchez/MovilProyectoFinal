@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
+import '../db/reservas_dao.dart';
 
 /// Pantalla de usuario: ver mis reservas y cancelarlas si quiero.
 class MyReservationsScreen extends StatefulWidget {
@@ -21,13 +21,13 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   }
 
   Future<void> _cargar() async {
-    final reservas = await DBHelper.obtenerReservasPorUsuario(widget.idUsuario);
+    final reservas = await ReservasDao.obtenerReservasPorUsuario(widget.idUsuario);
     if (!mounted) return;
     setState(() => _reservas = reservas);
   }
 
   Future<void> _cancelar(int idReserva) async {
-    await DBHelper.cancelarReserva(idReserva);
+    await ReservasDao.cancelarReserva(idReserva);
     await _cargar();
   }
 

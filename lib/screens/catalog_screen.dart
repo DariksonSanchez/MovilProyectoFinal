@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
+import '../db/libros_dao.dart';
+import '../db/prestamos_dao.dart';
+import '../db/reservas_dao.dart';
 import 'book_form_screen.dart';
 
 class CatalogScreen extends StatefulWidget {
@@ -25,7 +27,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _cargarLibros({String? busqueda}) async {
-    final libros = await DBHelper.obtenerLibros(busqueda: busqueda);
+    final libros = await LibrosDao.obtenerLibros(busqueda: busqueda);
     if (!mounted) return;
     setState(() => _libros = libros);
   }
@@ -54,14 +56,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
     if (confirmado != true) return;
 
-    final error = await DBHelper.eliminarLibro(libro['id'] as int);
+    final error = await LibrosDao.eliminarLibro(libro['id'] as int);
     if (!mounted) return;
     _avisar(error ?? 'Libro eliminado');
     await _cargarLibros(busqueda: _busquedaController.text);
   }
 
   Future<void> _prestarLibro(Map<String, dynamic> libro) async {
-    final error = await DBHelper.crearPrestamo(
+    final error = await PrestamosDao.crearPrestamo(
       widget.idUsuario,
       libro['id'] as int,
     );
@@ -71,7 +73,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _reservarLibro(Map<String, dynamic> libro) async {
-    final error = await DBHelper.crearReserva(
+    final error = await ReservasDao.crearReserva(
       widget.idUsuario,
       libro['id'] as int,
     );
@@ -116,13 +118,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       itemBuilder: (context, index) {
                         final libro = _libros[index];
                         final disponibles = libro['copias_disponibles'] as int;
+                        final totales = libro['copias_totales'] as int;
+                        final estadoCopias = disponibles > 0
+                            ? 'Disponibles: $disponibles / $totales'
+                            : 'Sin copias disponibles · $totales en total';
                         return Card(
                           child: ListTile(
                             title: Text(libro['titulo'] as String),
                             subtitle: Text(
                               '${libro['autor']}'
                               '${libro['genero'] != null && (libro['genero'] as String).isNotEmpty ? ' · ${libro['genero']}' : ''}'
-                              '\nDisponibles: $disponibles / ${libro['copias_totales']}',
+                              '\n$estadoCopias',
                             ),
                             isThreeLine: true,
                             trailing: widget.esAdmin
